@@ -395,6 +395,83 @@
       .lid{ animation:none; }
       .micBtn button{ transition:none; }
     }
+
+    /* =========================
+       🔒 BLOQUEIO POR CÓDIGO
+       ========================= */
+    .gate{
+      position: fixed;
+      inset: 0;
+      z-index: 20000;
+      display: none; /* liga via JS */
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(10px);
+      padding:
+        calc(env(safe-area-inset-top) + 18px)
+        calc(env(safe-area-inset-right) + 14px)
+        calc(env(safe-area-inset-bottom) + 18px)
+        calc(env(safe-area-inset-left) + 14px);
+    }
+    .gate .card{
+      width: min(520px, 100%);
+      margin: 0 auto;
+      border-radius: 22px;
+      background: radial-gradient(900px 700px at 50% 0%, rgba(255,255,255,.08), rgba(255,255,255,.03));
+      border: 1px solid rgba(255,255,255,.10);
+      box-shadow: 0 30px 80px rgba(0,0,0,.55);
+      padding: 18px 16px 16px;
+      color:#eaf7ff;
+    }
+    .gate h2{
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: .2px;
+    }
+    .gate p{
+      margin: 0 0 12px;
+      opacity: .92;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .gate .row{
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      flex-wrap: wrap;
+    }
+    .gate input{
+      flex: 1 1 220px;
+      min-width: 180px;
+      padding: 14px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.25);
+      color:#fff;
+      outline: none;
+      font-weight: 700;
+      letter-spacing: .6px;
+    }
+    .gate input::placeholder{ color: rgba(255,255,255,.55); }
+    .gate .okbtn{
+      flex: 0 0 auto;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: none;
+      cursor:pointer;
+      font-weight: 900;
+      background: linear-gradient(135deg, var(--btn1), var(--btn2));
+      color: var(--btnText);
+      box-shadow: 0 16px 30px rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.22);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .gate .msg{
+      margin-top: 10px;
+      font-size: 13px;
+      opacity: .95;
+    }
+    .gate .msg.bad{ color: #ffd3d3; }
+    .gate .msg.good{ color: #c9ffdf; }
+
   </style>
 </head>
 <body>
@@ -408,6 +485,22 @@
       <path d="M16 21h3a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
     </svg>
   </button>
+
+  <!-- 🔒 OVERLAY DO CÓDIGO -->
+  <div class="gate" id="gate" aria-hidden="true">
+    <div class="card" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+      <h2 id="gateTitle">Código de acesso</h2>
+      <p>
+        Digite o código. Se ele <strong>terminar com o dia de hoje</strong>, o acesso é liberado e
+        <strong>não vai pedir novamente</strong> neste navegador.
+      </p>
+      <div class="row">
+        <input id="gateCode" inputmode="numeric" autocomplete="one-time-code" placeholder="Ex: 123...17" />
+        <button class="okbtn" id="gateOk" type="button">Entrar</button>
+      </div>
+      <div class="msg" id="gateMsg"></div>
+    </div>
+  </div>
 
   <!-- ROSTO -->
   <div class="wrap" id="app">
@@ -470,6 +563,78 @@
 
 <script>
 (() => {
+  /* =========================
+     🔒 VALIDAÇÃO DO CÓDIGO
+     ========================= */
+  const KEY_OK = "acesso_ok_v1";
+
+  const gate = document.getElementById("gate");
+  const gateCode = document.getElementById("gateCode");
+  const gateOk = document.getElementById("gateOk");
+  const gateMsg = document.getElementById("gateMsg");
+
+  function todaySuffix2(){
+    const d = new Date();
+    const day = String(d.getDate()).padStart(2, "0"); // "17"
+    return day;
+  }
+
+  function lockUI(){
+    gate.style.display = "grid";
+    gate.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+    setTimeout(() => gateCode.focus(), 50);
+  }
+
+  function unlockUI(){
+    gate.style.display = "none";
+    gate.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+  }
+
+  function validateCodeAndUnlock(){
+    const code = (gateCode.value || "").trim();
+    const suf = todaySuffix2();
+
+    if (!code){
+      gateMsg.className = "msg bad";
+      gateMsg.textContent = "Digite um código.";
+      return;
+    }
+
+    // ✅ regra: termina com o dia do mês (ex.: "17")
+    if (code.endsWith(suf)){
+      localStorage.setItem(KEY_OK, "1");
+      gateMsg.className = "msg good";
+      gateMsg.textContent = "Acesso liberado ✅";
+      setTimeout(unlockUI, 250);
+    }else{
+      gateMsg.className = "msg bad";
+      gateMsg.textContent = `Código inválido. Ele precisa terminar com "${suf}".`;
+    }
+  }
+
+  // Se ainda não liberou antes, trava
+  try{
+    if (localStorage.getItem(KEY_OK) !== "1") lockUI();
+  }catch(_){
+    // se localStorage estiver bloqueado, força pedir sempre
+    lockUI();
+  }
+
+  gateOk.addEventListener("click", validateCodeAndUnlock);
+  gateCode.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") validateCodeAndUnlock();
+  });
+
+  // (opcional) bloquear clique fora
+  gate.addEventListener("click", (e) => {
+    if (e.target === gate) gateCode.focus();
+  });
+
+  /* =========================
+     SEU CÓDIGO ORIGINAL
+     ========================= */
   let audioCtx, analyser, data, stream;
   let running = false;
 
